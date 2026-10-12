@@ -5,32 +5,34 @@ from datetime import datetime
 import openpyxl
 from io import BytesIO
 
-# Configuración de la página web
 st.set_page_config(page_title="Sistema de Inspección Estructural", page_icon="🏗️", layout="wide")
 
 st.title("🏗️ Sistema Inteligente de Detección y Análisis de Grietas")
-st.markdown("Utiliza la cámara de tu dispositivo para capturar la superficie, realizar el análisis métrico, visualizar el dashboard analítico y exportar el reporte técnico en Excel.")
+st.markdown("Sistema optimizado para la detección de fisuras finas y superficiales mediante visión artificial avanzada.")
 
 st.markdown("---")
 
-# Sección de Captura con Cámara
 st.subheader("📷 Captura de Imagen en Vivo")
-foto_capturada = st.camera_input("Apunta con la cámara de tu laptop, tablet o celular a la superficie y toma la foto")
+foto_capturada = st.camera_input("Apunta con la cámara a la superficie con fisuras y toma la foto")
 
 if foto_capturada is not None:
-    # Convertir bytes de la cámara a matriz de OpenCV
     bytes_data = foto_capturada.getvalue()
     nparr = np.frombuffer(bytes_data, np.uint8)
     imagen = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
 
     if imagen is not None:
-        # Procesamiento de Visión Artificial con OpenCV
+        # 1. Preprocesamiento avanzado para grietas finas
         gris = cv2.cvtColor(imagen, cv2.COLOR_BGR2GRAY)
-        blur = cv2.GaussianBlur(gris, (5, 5), 0)
-        _, thresh = cv2.threshold(blur, 60, 255, cv2.THRESH_BINARY_INV)
         
-        kernel = np.ones((2, 2), np.uint8)
-        dilatado = cv2.dilate(thresh, kernel, iterations=1)
+        # Reducir ruido manteniendo los bordes finos con filtro bilateral
+        bilateral = cv2.bilateralFilter(gris, 9, 75, 75)
+        
+        # Detección de bordes con Canny adaptado para fisuras
+        edges = cv2.Canny(bilateral, 30, 100)
+        
+        # Conectar trazos fragmentados de la grieta usando dilatación con kernel vertical/horizontal
+        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
+        dilatado = cv2.dilate(edges, kernel, iterations=2)
 
         contornos, _ = cv2.findContours(dilatado, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
@@ -40,32 +42,38 @@ if foto_capturada is not None:
         registros = []
         resultado = imagen.copy()
 
+        # Obtener dimensiones de la imagen para filtrar los bordes de la cámara
+        alto_img, ancho_img = imagen.shape[:2]
+
         for cnt in contornos:
             area = cv2.contourArea(cnt)
-            # Filtrar ruido pequeño
-            if area > 150:
+            x, y, w, h = cv2.boundingRect(cnt)
+            
+            # Filtro para ignorar los marcos laterales de la cámara y ruido minúsculo
+            es_borde_camara = (x < 10 or y < 10 or (x + w) > (ancho_img - 10) or (y + h) > (alto_img - 10))
+            
+            if area > 40 and not es_borde_camara:
                 conteo += 1
-                x, y, w, h = cv2.boundingRect(cnt)
                 
-                # Conversión de píxeles a medidas estimadas en centímetros
-                ancho_cm = w * 0.04
-                largo_cm = h * 0.04
+                # Conversión métrica estimada
+                ancho_cm = max(0.1, w * 0.03)
+                largo_cm = max(0.5, h * 0.03)
 
-                # Lógica de severidad y alertas por colores
-                if largo_cm > 3.0:
+                # Severidad basada en longitud y apertura
+                if largo_cm > 2.5 or ancho_cm > 0.4:
                     severidad = "ALTO RIESGO"
-                    color = (0, 0, 255) # Rojo en BGR
+                    color = (0, 0, 255) # Rojo
                     alto_riesgo += 1
                 else:
                     severidad = "Estable / Leve"
-                    color = (0, 165, 255) # Naranja en BGR
+                    color = (0, 165, 255) # Naranja
                     estables += 1
 
-                # Delinear la grieta y colocar recuadro con dimensiones
+                # Delinear contorno real de la grieta y caja de inspección
+                cv2.drawContours(resultado, [cnt], -1, (0, 255, 0), 2)
                 cv2.rectangle(resultado, (x, y), (x + w, y + h), color, 2)
-                cv2.drawContours(resultado, [cnt], -1, (0, 255, 0), 1)
                 
-                # Texto directo sobre la imagen procesada
+                # Etiqueta con datos directamente sobre el hallazgo
                 cv2.putText(resultado, f"#{conteo} {largo_cm:.1f}cm", (x, max(20, y - 5)), 
                             cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
 
@@ -77,24 +85,20 @@ if foto_capturada is not None:
                     "obs": f"Fisura detectada. Ancho: {ancho_cm:.1f}cm, Largo: {largo_cm:.1f}cm. Condición: {severidad}."
                 })
 
-        # Convertir imagen procesada de BGR a RGB para mostrar en Streamlit
         imagen_rgb = cv2.cvtColor(resultado, cv2.COLOR_BGR2RGB)
 
         st.markdown("---")
-        
-        # Análisis Rápido / Resumen Ejecutivo
         st.subheader("⚡ Análisis Rápido y Diagnóstico Preliminar")
         if conteo > 0:
             if alto_riesgo > 0:
-                st.error(f"🚨 **Alerta Crítica:** Se detectaron {alto_riesgo} zonas de alto riesgo estructural que requieren atención inmediata.")
+                st.error(f"🚨 **Alerta Crítica:** Se detectaron {alto_riesgo} zonas de alto riesgo estructural.")
             else:
-                st.success(f"✅ **Estructura Estable:** Las {conteo} fisuras detectadas se encuentran dentro de parámetros estables o superficiales.")
+                st.success(f"✅ **Estructura Estable:** Las {conteo} fisuras detectadas son superficiales o leves.")
         else:
-            st.info("No se han detectado anomalías dimensionales evidentes en esta captura.")
+            st.info("No se han detectado fisuras relevantes en esta toma. Intenta acercar un poco más la cámara.")
 
         st.markdown("---")
 
-        # Layout del Dashboard en la Web
         col_img, col_dash = st.columns([1, 1])
 
         with col_img:
@@ -103,8 +107,6 @@ if foto_capturada is not None:
 
         with col_dash:
             st.subheader("📊 Dashboard Analítico de Daños")
-            
-            # Tarjetas de Métricas (KPIs)
             m1, m2, m3 = st.columns(3)
             m1.metric("Total Grietas", conteo)
             m2.metric("Alto Riesgo", alto_riesgo)
@@ -121,23 +123,17 @@ if foto_capturada is not None:
                 st.markdown(f"🟠 **Estables / Leves:** {estables} de {conteo}")
                 st.progress(pct_estables)
 
-        # Tabla de Detalles y Botón de Excel
         if registros:
             st.markdown("---")
             st.subheader("📋 Registro Detallado de Observaciones")
-            
             for r in registros:
                 st.markdown(f"- **Grieta #{r['id']}** | Severidad: **{r['severidad']}** | Ancho: {r['ancho']} cm | Largo: {r['largo']} cm -> _{r['obs']}_")
 
-            # Generar Excel en memoria con openpyxl (100% nativo, sin dependencias conflictivas)
             wb = openpyxl.Workbook()
             ws = wb.active
             ws.title = "Reporte_Grietas"
 
-            # Encabezados
             ws.append(["Grieta ID", "Ancho (cm)", "Largo (cm)", "Severidad", "Observaciones Técnicas"])
-            
-            # Filas de datos
             for r in registros:
                 ws.append([r["id"], r["ancho"], r["largo"], r["severidad"], r["obs"]])
 
