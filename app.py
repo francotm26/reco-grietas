@@ -8,21 +8,21 @@ from io import BytesIO
 st.set_page_config(page_title="Sistema de Inspección Estructural", page_icon="🏗️", layout="wide")
 
 st.title("🏗️ Sistema Inteligente de Detección y Análisis de Grietas")
-st.markdown("Sube o adjunta la fotografía de la inspección para realizar el análisis métrico y generar el reporte ejecutivo.")
+st.markdown("Captura la superficie directamente con la cámara, analiza las fisuras, visualiza el dashboard y descarga el reporte en Excel.")
 
 st.markdown("---")
 
-# Selector de archivo directo (compatible con galería o cámara directa del móvil sin bloqueos de iframe)
-st.subheader("📷 Carga de Imagen de Inspección")
-archivo_subido = st.file_uploader("Selecciona o toma una foto de la superficie", type=["jpg", "jpeg", "png"])
+# Módulo de cámara nativo integrado
+st.subheader("📷 Captura de Imagen con Cámara")
+foto_capturada = st.camera_input("Apunta a la superficie y toma la fotografía")
 
-if archivo_subido is not None:
-    bytes_data = archivo_subido.getvalue()
+if foto_capturada is not None:
+    bytes_data = foto_capturada.getvalue()
     nparr = np.frombuffer(bytes_data, np.uint8)
     imagen = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
 
     if imagen is not None:
-        # Preprocesamiento de visión artificial para fisuras y grietas finas
+        # Procesamiento avanzado con Canny y filtros para fisuras finas
         gris = cv2.cvtColor(imagen, cv2.COLOR_BGR2GRAY)
         bilateral = cv2.bilateralFilter(gris, 9, 75, 75)
         edges = cv2.Canny(bilateral, 30, 100)
@@ -44,6 +44,7 @@ if archivo_subido is not None:
             area = cv2.contourArea(cnt)
             x, y, w, h = cv2.boundingRect(cnt)
             
+            # Filtrar los marcos o bordes automáticos de la cámara
             es_borde = (x < 10 or y < 10 or (x + w) > (ancho_img - 10) or (y + h) > (alto_img - 10))
             
             if area > 40 and not es_borde:
@@ -51,15 +52,17 @@ if archivo_subido is not None:
                 ancho_cm = max(0.1, w * 0.03)
                 largo_cm = max(0.5, h * 0.03)
 
+                # Clasificación de severidad y colores
                 if largo_cm > 2.5 or ancho_cm > 0.4:
                     severidad = "ALTO RIESGO"
-                    color = (0, 0, 255) # Rojo
+                    color = (0, 0, 255) # Rojo en BGR
                     alto_riesgo += 1
                 else:
                     severidad = "Estable / Leve"
-                    color = (0, 165, 255) # Naranja
+                    color = (0, 165, 255) # Naranja en BGR
                     estables += 1
 
+                # Delinear contorno y caja de dimensiones
                 cv2.drawContours(resultado, [cnt], -1, (0, 255, 0), 2)
                 cv2.rectangle(resultado, (x, y), (x + w, y + h), color, 2)
                 cv2.putText(resultado, f"#{conteo} {largo_cm:.1f}cm", (x, max(20, y - 5)), 
@@ -81,9 +84,9 @@ if archivo_subido is not None:
             if alto_riesgo > 0:
                 st.error(f"🚨 **Alerta Crítica:** Se detectaron {alto_riesgo} zonas de alto riesgo estructural.")
             else:
-                st.success(f"✅ **Estructura Estable:** Las {conteo} fisuras detectadas son superficiales.")
+                st.success(f"✅ **Estructura Estable:** Las {conteo} fisuras detectadas son superficiales o leves.")
         else:
-            st.info("No se han detectado anomalías relevantes en esta imagen.")
+            st.info("No se han detectado fisuras evidentes en esta toma. Intenta enfocar más de cerca.")
 
         st.markdown("---")
 
