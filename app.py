@@ -8,29 +8,25 @@ from io import BytesIO
 st.set_page_config(page_title="Sistema de Inspección Estructural", page_icon="🏗️", layout="wide")
 
 st.title("🏗️ Sistema Inteligente de Detección y Análisis de Grietas")
-st.markdown("Sistema optimizado para la detección de fisuras finas y superficiales mediante visión artificial avanzada.")
+st.markdown("Sube o adjunta la fotografía de la inspección para realizar el análisis métrico y generar el reporte ejecutivo.")
 
 st.markdown("---")
 
-st.subheader("📷 Captura de Imagen en Vivo")
-foto_capturada = st.camera_input("Apunta con la cámara a la superficie con fisuras y toma la foto")
+# Selector de archivo directo (compatible con galería o cámara directa del móvil sin bloqueos de iframe)
+st.subheader("📷 Carga de Imagen de Inspección")
+archivo_subido = st.file_uploader("Selecciona o toma una foto de la superficie", type=["jpg", "jpeg", "png"])
 
-if foto_capturada is not None:
-    bytes_data = foto_capturada.getvalue()
+if archivo_subido is not None:
+    bytes_data = archivo_subido.getvalue()
     nparr = np.frombuffer(bytes_data, np.uint8)
     imagen = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
 
     if imagen is not None:
-        # 1. Preprocesamiento avanzado para grietas finas
+        # Preprocesamiento de visión artificial para fisuras y grietas finas
         gris = cv2.cvtColor(imagen, cv2.COLOR_BGR2GRAY)
-        
-        # Reducir ruido manteniendo los bordes finos con filtro bilateral
         bilateral = cv2.bilateralFilter(gris, 9, 75, 75)
-        
-        # Detección de bordes con Canny adaptado para fisuras
         edges = cv2.Canny(bilateral, 30, 100)
         
-        # Conectar trazos fragmentados de la grieta usando dilatación con kernel vertical/horizontal
         kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
         dilatado = cv2.dilate(edges, kernel, iterations=2)
 
@@ -42,24 +38,19 @@ if foto_capturada is not None:
         registros = []
         resultado = imagen.copy()
 
-        # Obtener dimensiones de la imagen para filtrar los bordes de la cámara
         alto_img, ancho_img = imagen.shape[:2]
 
         for cnt in contornos:
             area = cv2.contourArea(cnt)
             x, y, w, h = cv2.boundingRect(cnt)
             
-            # Filtro para ignorar los marcos laterales de la cámara y ruido minúsculo
-            es_borde_camara = (x < 10 or y < 10 or (x + w) > (ancho_img - 10) or (y + h) > (alto_img - 10))
+            es_borde = (x < 10 or y < 10 or (x + w) > (ancho_img - 10) or (y + h) > (alto_img - 10))
             
-            if area > 40 and not es_borde_camara:
+            if area > 40 and not es_borde:
                 conteo += 1
-                
-                # Conversión métrica estimada
                 ancho_cm = max(0.1, w * 0.03)
                 largo_cm = max(0.5, h * 0.03)
 
-                # Severidad basada en longitud y apertura
                 if largo_cm > 2.5 or ancho_cm > 0.4:
                     severidad = "ALTO RIESGO"
                     color = (0, 0, 255) # Rojo
@@ -69,11 +60,8 @@ if foto_capturada is not None:
                     color = (0, 165, 255) # Naranja
                     estables += 1
 
-                # Delinear contorno real de la grieta y caja de inspección
                 cv2.drawContours(resultado, [cnt], -1, (0, 255, 0), 2)
                 cv2.rectangle(resultado, (x, y), (x + w, y + h), color, 2)
-                
-                # Etiqueta con datos directamente sobre el hallazgo
                 cv2.putText(resultado, f"#{conteo} {largo_cm:.1f}cm", (x, max(20, y - 5)), 
                             cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
 
@@ -93,9 +81,9 @@ if foto_capturada is not None:
             if alto_riesgo > 0:
                 st.error(f"🚨 **Alerta Crítica:** Se detectaron {alto_riesgo} zonas de alto riesgo estructural.")
             else:
-                st.success(f"✅ **Estructura Estable:** Las {conteo} fisuras detectadas son superficiales o leves.")
+                st.success(f"✅ **Estructura Estable:** Las {conteo} fisuras detectadas son superficiales.")
         else:
-            st.info("No se han detectado fisuras relevantes en esta toma. Intenta acercar un poco más la cámara.")
+            st.info("No se han detectado anomalías relevantes en esta imagen.")
 
         st.markdown("---")
 
